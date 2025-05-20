@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Intensiewe Vorm Flashcards - Scaled & Free Drag</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:wght@500;600;700&display=swap"
+    rel="stylesheet"
+  />
+  <style>
+    html, body {
+      height: 100%; margin: 0; padding: 0;
+      font-family: 'Inter', sans-serif; color-scheme: dark;
+      user-select: none; overflow: hidden; /* Prevent body scroll due to drag */
+    }
+    body {
+      background-image: url('https://raw.githubusercontent.com/bajoseph01/3DFlashCard/bbe888649ba5d2302e9f829d0eeac96e12a0a53e/WoodTableBack.png');
+      background-size: cover; background-position: center center;
+      background-repeat: no-repeat; background-attachment: fixed;
+      position: relative; /* For absolute positioning of app-controls and draggable area */
+    }
+
+    /* Container for fixed controls at the top/within app-area */
+    #app-controls-header {
+      position: fixed; /* Fixed to viewport, or absolute to body if body is main layout driver */
+      top: 20px; /* Adjust as needed */
+      left: 50%; /* Center it horizontally */
+      transform: translateX(-50%);
+      z-index: 100; /* Above draggable card stack */
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 10px;
+      /* background-color: rgba(15, 23, 42, 0.5); /* Optional semi-transparent bg */
+      /* border-radius: 8px; */
+      width: 90%;
+      max-width: 450px; /* Max width for controls */
+    }
+
+
+    .font-serif-display { font-family: 'Playfair Display', serif; }
+
+    #card-presentation-area {
+      position: absolute; /* For dragging */
+      /* Initial position will be set by JS to center of viewport */
+      width: 380px; /* Base width before scaling */
+      aspect-ratio: 9 / 15.5;
+      cursor: grab;
+      transform: scale(0.75); /* Apply 75% scaling */
+      transform-origin: center center; /* Scale from its center */
+      z-index: 50; /* Below app-controls-header */
+    }
+    #card-presentation-area.dragging { cursor: grabbing; }
+
+    .dummy-card {
+      position: absolute; width: 100%; height: 100%; border-radius: 1.75rem;
+      background: linear-gradient(145deg, #1e293b, #111827);
+      box-shadow: 0px 2px 5px rgba(0,0,0,0.3), 0px 5px 15px rgba(0,0,0,0.2),
+                  inset 0 0 0 1px rgba(0,0,0,0.4), inset 0 0 0 2px rgba(255,214,102,0.05);
+      transition: transform 0.4s cubic-bezier(0.23, 1, 0.32, 1);
+    }
+    #dummy-card-1 { transform: translate(-18px, 15px) rotate(-9deg); z-index: 1; }
+    #dummy-card-2 { transform: translate(15px, 12px) rotate(7deg); z-index: 2; }
+    #dummy-card-3 { transform: translate(-10px, 8px) rotate(-5deg); z-index: 3; }
+    #dummy-card-4 { transform: translate(8px, 5px) rotate(3.5deg); z-index: 4; }
+    #dummy-card-5 { transform: translate(-3px, 2px) rotate(-1.5deg); z-index: 5; }
+
+    #card-presentation-area:hover #dummy-card-1 { transform: translate(-22px, 18px) rotate(-10.5deg); }
+    #card-presentation-area:hover #dummy-card-2 { transform: translate(19px, 15px) rotate(8.5deg); }
+    #card-presentation-area:hover #dummy-card-3 { transform: translate(-14px, 10px) rotate(-6.5deg); }
+    #card-presentation-area:hover #dummy-card-4 { transform: translate(11px, 7px) rotate(4.5deg); }
+    #card-presentation-area:hover #dummy-card-5 { transform: translate(-5px, 3px) rotate(-2.5deg); }
+
+    #tilt-boundary {
+      position: absolute; top:0; left:0; width: 100%; height: 100%;
+      z-index: 10; /* Within card-presentation-area, this is for its children */
+    }
+
+    .card-container {
+      width: 100%; height: 100%; border-radius: 1.75rem;
+      background-size: cover; background-position: center;
+      box-shadow: 0 0 0 2px rgba(255,214,102,0.4), 0 0 25px 8px rgba(255,214,102,0.15);
+      transform-style: preserve-3d;
+      transition: transform 0.6s cubic-bezier(0.23, 1, 0.32, 1), box-shadow 0.4s ease-out, background-image 0.3s ease-in-out;
+      cursor: pointer; 
+    }
+     #card-presentation-area:hover .card-container:not([style*="transform: matrix3d"]) {
+         box-shadow: 0 0 0 3px rgba(255,214,102,0.6), 0 0 35px 12px rgba(255,214,102,0.25);
+    }
+
+    .card-face {
+        position: absolute; width: 100%; height: 100%;
+        backface-visibility: hidden; -webkit-backface-visibility: hidden;
+        display: flex; flex-direction: column; justify-content: flex-end;
+        border-radius: 1.75rem; overflow: hidden; transform-style: preserve-3d;
+    }
+    .card-front { background: transparent; }
+    .card-back { background: transparent; transform: rotateY(180deg); }
+    .card-container.is-flipped { transform: rotateY(180deg); }
+
+    .card-face .inner-border-overlay, .card-face .gradient-overlay,
+    .card-face .elevation-badge, .card-face .text-block {
+      position: absolute; pointer-events: none; z-index: 10;
+    }
+    .card-face .inner-border-overlay { inset: 14px; border-radius: 1.375rem; box-shadow: inset 0.5px 0.5px 1.5px rgba(255, 235, 180, 0.6), inset -1px -1px 1px rgba(160, 110, 0, 0.5), inset 3px 3px 6px rgba(0, 0, 0, 0.25); border: 1px solid rgba(255, 214, 102, 0.1); transform: translateZ(30px); }
+    .card-face .gradient-overlay { bottom: 0; left: 0; right: 0; height: 75%; background: linear-gradient(to top, rgba(10,10,10,0.9) 0%, rgba(10,10,10,0.65) 50%, transparent 100%); z-index: 15; transform: translateZ(5px); }
+    .card-face .elevation-badge { top: 1rem; right: 1rem; background: rgba(250, 204, 21, 0.85); border-radius: 9999px; padding: 0.5rem 1rem; color: #422006; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.025em; z-index: 25; border: 1px solid rgba(255,255,255,0.3); box-shadow: 0 2px 10px rgba(0,0,0,0.2); display: flex; align-items: center; transform: translateZ(70px); pointer-events: auto; }
+    .card-face .text-block { z-index: 20; color: #f8fafc; text-align: center; text-shadow: 0 2px 4px rgba(0,0,0,0.5); padding: 0 1rem 2rem 1rem; transform: translateZ(60px); width: 100%; bottom: 0; }
+    
+    .main-term {
+        font-family: 'Playfair Display', serif; font-size: 2.75rem;
+        line-height: 1.2; font-weight: bold; word-wrap: break-word;
+    }
+    .navigation-button {
+      background: linear-gradient(145deg, #fde047, #facc15); color: #422006; font-weight: 600;
+      padding: 0.75rem 1.75rem; border-radius: 9999px; text-align: center; margin: 0.5rem auto; /* Consistent margin for buttons in header */
+      display: block; width: fit-content; border: none;
+      box-shadow: inset 2px 2px 4px rgba(160,110,0,0.6), inset -2px -2px 4px rgba(255,245,200,0.5), 0 1px 2px rgba(0,0,0,0.1);
+      transition: all 0.3s ease; cursor: pointer;
+    }
+    .navigation-button:hover {
+      background: linear-gradient(145deg, #feec80, #fde047); transform: translateY(-2px);
+      box-shadow: inset 2px 2px 4px rgba(160,110,0,0.6), inset -2px -2px 4px rgba(255,245,200,0.5), 0 4px 8px rgba(0,0,0,0.15);
+    }
+
+    #celebration-container {
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      pointer-events: none; z-index: 60; overflow: hidden; border-radius: 1.75rem;
+    }
+    .particle { position: absolute; opacity: 1; }
+    .particle.star::before { content: '★'; font-size: 1em; }
+
+    #feedback-message.correct { color: #34d399; }
+    #feedback-message.incorrect { color: #f87171; }
+    
+    #score-display {
+        color: #e2e8f0; font-size: 0.9rem;
+        margin-top: 0.5rem; margin-bottom: 0.5rem; 
+        text-align: center; min-height: 1.2em;
+    }
+    /* Removed app-area and simplified control containers as they are now children of app-controls-header */
+    #type-mode-controls { /* Was .type-mode-controls-container */
+        display: none; 
+        margin-top: 0.5rem; /* Space after score */
+        text-align: center;
+        width: 100%; /* Takes width of app-controls-header */
+    }
+
+  </style>
+</head>
+<body>
+
+  <div id="app-controls-header">
+    <button id="mode-toggle-button" class="navigation-button" style="background-color: #4f46e5; color: white;">Switch to Type Mode</button>
+    <div id="score-display"></div>
+    <div id="type-mode-controls">
+      <input type="text" id="answer-input" placeholder="Tik die Afrikaanse woord" style="padding: 0.75rem; border-radius: 0.5rem; border: 1px solid #4b5563; background-color: #1f2937; color: white; width: calc(100% - 2rem); margin-bottom: 0.75rem; font-size: 1rem;">
+      <button id="check-answer-button" class="navigation-button">Merk My</button>
+      <div id="feedback-message" style="margin-top: 0.5rem; min-height: 1.5em; font-weight: 500;"></div>
+    </div>
+  </div>
+
+  <div id="card-presentation-area">
+    <div class="dummy-card" id="dummy-card-1"></div>
+    <div class="dummy-card" id="dummy-card-2"></div>
+    <div class="dummy-card" id="dummy-card-3"></div>
+    <div class="dummy-card" id="dummy-card-4"></div>
+    <div class="dummy-card" id="dummy-card-5"></div>
+    <div id="tilt-boundary" data-tilt data-tilt-max="8" data-tilt-speed="400" data-tilt-perspective="1500" data-tilt-glare data-tilt-max-glare="0.1" data-tilt-scale="1.03">
+      <div class="card-container" id="flashcard-element">
+          <div class="card-face card-front">
+              <div class="inner-border-overlay"></div><div class="gradient-overlay"></div>
+              <div class="elevation-badge">INTENSIEWE VORM</div>
+              <div class="text-block"><div id="main-term-display" class="main-term">Engelse Term</div></div>
+          </div>
+          <div class="card-face card-back">
+              <div class="inner-border-overlay"></div><div class="gradient-overlay"></div>
+              <div class="elevation-badge">INTENSIEWE VORM</div>
+              <div class="text-block"><div id="main-term-display-back" class="main-term">Afrikaanse Term</div></div>
+          </div>
+          <div id="celebration-container"></div>
+      </div>
+    </div>
+  </div>
+  <!-- "Next" button is removed -->
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/vanilla-tilt/1.8.0/vanilla-tilt.min.js"></script>
+  <script>
+    function toPascalCase(str) { /* ... */ }
+    const GITHUB_IMAGE_BASE_URL = "https://raw.githubusercontent.com/bajoseph01/3DFlashCard/main/";
+    const celebrationColors = ['#FFC700', '#FF3D77', '#00E0C7', '#8E44AD', '#3498DB', '#F1C40F', '#E74C3C'];
+    const NUM_PARTICLES = 50; const PARTICLE_ANIMATION_DURATION = 1500;
+    let initialFlashcardData = [ /* ... data ... */
+        { "afrikaans": "brandarm", "english": "very poor", "imageFilename": "BrandArm.png" },
+        { "afrikaans": "brandmaer", "english": "very skinny", "imageFilename": "brandmaer.png" },
+        { "afrikaans": "sopnat", "english": "very wet", "imageFilename": "sopnat.png" },
+        { "afrikaans": "stokoud", "english": "very old", "imageFilename": "stokoud.png" }, 
+        { "afrikaans": "stokdoof", "english": "very deaf", "imageFilename": "stokdoof.png" },
+        { "afrikaans": "morsdood", "english": "very dead", "imageFilename": "morsdood.png" },
+        { "afrikaans": "piepklein", "english": "very small", "imageFilename": "piepklein.png" },
+        { "afrikaans": "spekvet", "english": "very fat", "imageFilename": "spekvet.png" }, 
+        { "afrikaans": "kliphard", "english": "very hard", "imageFilename": "kliphard.png" }, 
+        { "afrikaans": "papsag", "english": "very soft", "imageFilename": "papsag.png" }, 
+        { "afrikaans": "vuurwarm", "english": "very warm", "imageFilename": "vuurwarm.png" }, 
+        { "afrikaans": "yskoud", "english": "very cold", "imageFilename": "yskoud.png" }, 
+        { "afrikaans": "seepglad", "english": "very slippery", "imageFilename": "seepglad.png" }, 
+        { "afrikaans": "kurkdroog", "english": "very dry", "imageFilename": "kurkdroog.png" }, 
+        { "afrikaans": "blitsvinnig", "english": "very fast", "imageFilename": "blitsvinnig.png" }, 
+        { "afrikaans": "goudgeel", "english": "very yellow", "imageFilename": "goudgeel.png" }, 
+        { "afrikaans": "bloedrooi", "english": "very red", "imageFilename": "bloedrooi.png" }, 
+        { "afrikaans": "potblou", "english": "very blue", "imageFilename": "potblou.png" }, 
+        { "afrikaans": "pikswart", "english": "very black", "imageFilename": "pikswart.png" }, 
+        { "afrikaans": "spierwit", "english": "very white", "imageFilename": "spierwit.png" }
+      ].map(item => ({ ...item, id: item.afrikaans + '-' + item.english, imageUrl: GITHUB_IMAGE_BASE_URL + (item.imageFilename || (toPascalCase(item.afrikaans) + ".png")) }));
+    
+    let flashcardDeck = []; let currentCardIndex = 0;
+    let firstTryCorrectSet = new Set(); let scoreDisplay;
+    let currentCardAttemptedInTypeMode = false;
+
+    let appControlsHeader, flashcardElement, tiltBoundaryElement, cardPresentationArea, mainTermDisplayFront, mainTermDisplayBack;
+    let currentMode = 'show', modeToggleButton, typeModeControls, answerInput, checkAnswerButton, feedbackMessage, celebrationContainer;
+
+    function shuffleArray(array) { /* ... */ }
+    function updateScoreDisplay() { /* ... */ }
+    function loadCard(index) { /* ... */ }
+    function flipCard() { /* ... */ }
+    function showNextCard() { /* ... */ }
+    function toggleMode() { /* ... */ }
+    function triggerCelebration() { /* ... */ }
+    function checkAnswer() { /* ... */ }
+
+    // --- Re-pasting the JS functions here for completeness due to length ---
+    toPascalCase = function(str) { if (!str) return ''; return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase(); };
+    shuffleArray = function(array) { for (let i = array.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [array[i], array[j]] = [array[j], array[i]]; } };
+    updateScoreDisplay = function() { if (scoreDisplay) { if (currentMode === 'type') { scoreDisplay.textContent = `Eerste Probeer Korrek: ${firstTryCorrectSet.size} / ${flashcardDeck.length}`; scoreDisplay.style.display = 'block'; } else { scoreDisplay.style.display = 'none'; } } };
+    loadCard = function(index) { if (!flashcardDeck || flashcardDeck.length === 0) return; currentCardIndex = index; const card = flashcardDeck[index]; if (!flashcardElement || !card) return; if (card.imageUrl) flashcardElement.style.backgroundImage = `url('${card.imageUrl}')`; else flashcardElement.style.backgroundImage = 'none'; mainTermDisplayFront.textContent = card.english; mainTermDisplayBack.textContent = card.afrikaans; flashcardElement.classList.remove('is-flipped'); if (celebrationContainer) celebrationContainer.innerHTML = ''; currentCardAttemptedInTypeMode = false; if (currentMode === 'type') { if (answerInput) answerInput.value = ''; if (feedbackMessage) { feedbackMessage.textContent = ''; feedbackMessage.className = ''; } if (checkAnswerButton) checkAnswerButton.disabled = false; } updateScoreDisplay(); };
+    flipCard = function() { if (currentMode === 'show' && flashcardElement) flashcardElement.classList.toggle('is-flipped'); };
+    showNextCard = function() { let nextIndex = (currentCardIndex + 1) % flashcardDeck.length; loadCard(nextIndex); };
+    toggleMode = function() { currentMode = (currentMode === 'show') ? 'type' : 'show'; modeToggleButton.textContent = currentMode === 'type' ? 'Switch to Show Mode' : 'Switch to Type Mode'; typeModeControls.style.display = currentMode === 'type' ? 'block' : 'none'; if (currentMode === 'type' && answerInput) answerInput.focus(); flashcardElement.classList.remove('is-flipped'); loadCard(currentCardIndex); };
+    triggerCelebration = function() { if (!celebrationContainer) return; celebrationContainer.innerHTML = ''; const containerRect = celebrationContainer.getBoundingClientRect(); const originX = containerRect.width / 2; const originY = containerRect.height / 2; for (let i = 0; i < NUM_PARTICLES; i++) { const particle = document.createElement('div'); particle.classList.add('particle'); const isStar = Math.random() > 0.5; if (isStar) { particle.classList.add('star'); const size = 10 + Math.random() * 15; particle.style.width = `${size}px`; particle.style.height = `${size}px`; particle.style.color = celebrationColors[Math.floor(Math.random() * celebrationColors.length)]; } else { particle.classList.add('confetti'); particle.style.width = `${5 + Math.random() * 10}px`; particle.style.height = `${10 + Math.random() * 15}px`; particle.style.backgroundColor = celebrationColors[Math.floor(Math.random() * celebrationColors.length)]; } particle.style.left = `${originX}px`; particle.style.top = `${originY}px`; celebrationContainer.appendChild(particle); const angle = Math.random() * Math.PI * 2; const velocity = 50 + Math.random() * 150; const gravity = 0.5; const rotation = (Math.random() - 0.5) * 720; const initialRotation = (Math.random() - 0.5) * 90; let vx = Math.cos(angle) * velocity; let vy = Math.sin(angle) * velocity; let x = originX; let y = originY; let rot = initialRotation; let opacity = 1; const startTime = performance.now(); function animateParticle(currentTime) { const elapsedTime = currentTime - startTime; const progress = Math.min(elapsedTime / PARTICLE_ANIMATION_DURATION, 1); x += vx * (16 / 1000); y += vy * (16 / 1000); vy += gravity; rot = initialRotation + (rotation * progress); if (progress > 0.6) opacity = 1 - (progress - 0.6) / 0.4; particle.style.transform = `translate(-50%, -50%) translate(${x - originX}px, ${y - originY}px) rotate(${rot}deg)`; particle.style.opacity = opacity; if (progress < 1) requestAnimationFrame(animateParticle); else if (particle.parentNode) particle.parentNode.removeChild(particle); } requestAnimationFrame(animateParticle); } };
+    checkAnswer = function() { if (!flashcardDeck || flashcardDeck.length === 0 || !answerInput || !feedbackMessage) return; const currentCardData = flashcardDeck[currentCardIndex]; const correctAnswer = currentCardData.afrikaans; const userAnswer = answerInput.value.trim(); if (userAnswer === correctAnswer) { feedbackMessage.textContent = 'Korrek!'; feedbackMessage.className = 'correct'; if (!currentCardAttemptedInTypeMode && !firstTryCorrectSet.has(currentCardData.id)) { firstTryCorrectSet.add(currentCardData.id); updateScoreDisplay(); } currentCardAttemptedInTypeMode = true; if (checkAnswerButton) checkAnswerButton.disabled = true; if (flashcardElement && !flashcardElement.classList.contains('is-flipped')) { flashcardElement.classList.add('is-flipped'); } setTimeout(() => { triggerCelebration(); }, 600); } else { feedbackMessage.textContent = `Nie Reg Nie. Probeer weer.`; feedbackMessage.className = 'incorrect'; currentCardAttemptedInTypeMode = true; } };
+    // --- End of re-pasted JS functions ---
+
+
+    document.addEventListener('DOMContentLoaded', () => {
+        flashcardDeck = [...initialFlashcardData]; 
+        shuffleArray(flashcardDeck); 
+        
+        appControlsHeader = document.getElementById('app-controls-header');
+        cardPresentationArea = document.getElementById('card-presentation-area');
+        tiltBoundaryElement = document.getElementById('tilt-boundary');
+        flashcardElement = document.getElementById('flashcard-element');
+        mainTermDisplayFront = document.getElementById('main-term-display');
+        mainTermDisplayBack = document.getElementById('main-term-display-back');
+        modeToggleButton = document.getElementById('mode-toggle-button');
+        typeModeControls = document.getElementById('type-mode-controls');
+        answerInput = document.getElementById('answer-input');
+        checkAnswerButton = document.getElementById('check-answer-button');
+        feedbackMessage = document.getElementById('feedback-message');
+        celebrationContainer = document.getElementById('celebration-container');
+        scoreDisplay = document.getElementById('score-display');
+
+        const allElements = [appControlsHeader, cardPresentationArea, tiltBoundaryElement, flashcardElement, mainTermDisplayFront, 
+                             mainTermDisplayBack, modeToggleButton, typeModeControls, answerInput, 
+                             checkAnswerButton, feedbackMessage, celebrationContainer, scoreDisplay];
+        if (allElements.some(el => !el)) {
+            console.error("DOM elements missing for app initialization!");
+            document.body.innerHTML = '<div style="color: white; text-align: center; padding: 20px;">Error: Essential elements missing for app.</div>';
+            return;
+        }
+        
+        flashcardElement.addEventListener('click', flipCard);
+
+        cardPresentationArea.addEventListener('dblclick', (e) => {
+            // Only trigger next card if not clicking on a button inside type controls
+            if (typeModeControls.contains(e.target) || modeToggleButton.contains(e.target)) {
+                 return;
+            }
+            showNextCard();
+        });
+
+        let touchStartX = 0, touchStartY = 0, touchEndX = 0, touchEndY = 0;
+        const swipeThreshold = 50; const swipeTimeThreshold = 300;
+        let swipeStartTime = 0;
+
+        cardPresentationArea.addEventListener('touchstart', function(event) {
+            if (event.touches.length === 1) {
+                touchStartX = event.changedTouches[0].screenX;
+                touchStartY = event.changedTouches[0].screenY;
+                swipeStartTime = new Date().getTime();
+            }
+        }, { passive: true }); // Passive true if not preventing default scroll
+
+        cardPresentationArea.addEventListener('touchend', function(event) {
+            if (event.changedTouches.length === 1) {
+                touchEndX = event.changedTouches[0].screenX;
+                touchEndY = event.changedTouches[0].screenY;
+                const swipeDuration = new Date().getTime() - swipeStartTime;
+                const deltaX = touchEndX - touchStartX;
+                const deltaY = touchEndY - touchStartY;
+
+                if (swipeDuration < swipeTimeThreshold) {
+                    if (Math.abs(deltaX) > swipeThreshold && Math.abs(deltaX) > Math.abs(deltaY)) {
+                        if (deltaX < 0) { showNextCard(); }
+                    }
+                }
+            }
+        }, false);
+
+        let isDragging = false;
+        let dragOffsetX, dragOffsetY;
+        
+        // Set initial position of cardPresentationArea to center of viewport
+        const presAreaWidth = cardPresentationArea.offsetWidth * 0.75; // account for scale
+        const presAreaHeight = cardPresentationArea.offsetHeight * 0.75; // account for scale
+        cardPresentationArea.style.left = `${(window.innerWidth - presAreaWidth) / 2}px`;
+        cardPresentationArea.style.top = `${(window.innerHeight - presAreaHeight) / 2}px`;
+
+
+        function onMouseDown(event) {
+            // Prevent drag if clicking on interactive elements within the card, or buttons/inputs
+            if (event.target.closest('#tilt-boundary') && event.target !== cardPresentationArea ||
+                event.target.closest('button') || event.target.closest('input')) {
+                // If the click is on tilt-boundary (main card) but not the presentation area itself,
+                // let tilt/flip happen, don't start drag.
+                // Also don't drag if clicking buttons/inputs.
+                if(event.target.closest('#tilt-boundary')){ // if on main card, allow tilt to init
+                     isDragging = false; // ensure not dragging
+                     return;
+                }
+            }
+
+            isDragging = true;
+            cardPresentationArea.classList.add('dragging');
+            
+            const rect = cardPresentationArea.getBoundingClientRect();
+            // Adjust for existing scale when calculating offset
+            dragOffsetX = (event.clientX || event.touches[0].clientX) - rect.left;
+            dragOffsetY = (event.clientY || event.touches[0].clientY) - rect.top;
+            
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mouseup', onMouseUp);
+            document.addEventListener('touchmove', onMouseMove, { passive: false });
+            document.addEventListener('touchend', onMouseUp);
+            if(event.touches) event.preventDefault(); // Prevent scroll on touch drag start
+        }
+
+        function onMouseMove(event) {
+            if (!isDragging) return;
+            if(event.touches) event.preventDefault();
+
+            const clientX = event.clientX || event.touches[0].clientX;
+            const clientY = event.clientY || event.touches[0].clientY;
+            
+            // Position relative to viewport, no appArea constraint
+            let newX = clientX - dragOffsetX;
+            let newY = clientY - dragOffsetY;
+
+            // Optional: keep within viewport (adjust for scaled size)
+            const scaledWidth = cardPresentationArea.offsetWidth; //getBoundingClient gives scaled
+            const scaledHeight = cardPresentationArea.offsetHeight;
+            newX = Math.max(0, Math.min(newX, window.innerWidth - scaledWidth));
+            newY = Math.max(0, Math.min(newY, window.innerHeight - scaledHeight));
+            
+            cardPresentationArea.style.left = `${newX}px`;
+            cardPresentationArea.style.top = `${newY}px`;
+        }
+
+        function onMouseUp() {
+            isDragging = false;
+            cardPresentationArea.classList.remove('dragging');
+            document.removeEventListener('mousemove', onMouseMove);
+            document.removeEventListener('mouseup', onMouseUp);
+            document.removeEventListener('touchmove', onMouseMove);
+            document.removeEventListener('touchend', onMouseUp);
+        }
+
+        cardPresentationArea.addEventListener('mousedown', onMouseDown);
+        cardPresentationArea.addEventListener('touchstart', onMouseDown, { passive: false });
+
+        modeToggleButton.addEventListener('click', toggleMode);
+        checkAnswerButton.addEventListener('click', checkAnswer);
+        answerInput.addEventListener('keypress', (event) => { if (event.key === 'Enter') checkAnswer(); });
+        loadCard(0); 
+        updateScoreDisplay(); 
+        if (typeof VanillaTilt !== 'undefined' && tiltBoundaryElement) {
+            VanillaTilt.init(tiltBoundaryElement);
+        } else {
+            console.warn("VanillaTilt library not loaded or tiltBoundaryElement not found.");
+        }
+    });
+  </script>
+</body>
+</html>
